@@ -1,22 +1,24 @@
 ---
 name: typescript-advanced-types
-description: Master TypeScript's advanced type system including generics, conditional types, mapped types, template literals, and utility types for building type-safe applications. Use when implementing complex type logic, creating reusable type utilities, or ensuring compile-time type safety in TypeScript projects.
+description: Master TypeScript's advanced type system including generics, conditional types, mapped types, template literals, utility types, and modern features like `satisfies` and `const type parameters`. Use when implementing complex type logic, creating reusable type utilities, ensuring compile-time type safety, or building type-safe APIs, libraries, and frameworks in TypeScript projects.
 ---
 
 # TypeScript Advanced Types
 
-Comprehensive guidance for mastering TypeScript's advanced type system including generics, conditional types, mapped types, template literal types, and utility types for building robust, type-safe applications.
+Comprehensive guidance for mastering TypeScript's advanced type system — generics, conditional types, mapped types, template literal types, utility types, and modern TypeScript 5.x features — for building robust, type-safe applications.
 
 ## When to Use This Skill
 
 - Building type-safe libraries or frameworks
 - Creating reusable generic components
 - Implementing complex type inference logic
-- Designing type-safe API clients
-- Building form validation systems
+- Designing type-safe API clients or SDKs
+- Building form validation systems with type-safe schemas
 - Creating strongly-typed configuration objects
-- Implementing type-safe state management
+- Implementing type-safe state management (Redux, Zustand, XState)
 - Migrating JavaScript codebases to TypeScript
+- Wrapping third-party libraries with better types
+- Writing type-level tests to validate type behavior
 
 ## Core Concepts
 
@@ -65,6 +67,49 @@ const merged = merge({ name: "John" }, { age: 30 });
 // Type: { name: string } & { age: number }
 ```
 
+**Default Type Parameters:**
+
+```typescript
+interface APIResponse<TData = unknown, TError = string> {
+  data?: TData;
+  error?: TError;
+  status: number;
+}
+
+// Uses defaults
+const res1: APIResponse = { status: 200 };
+// Custom types
+const res2: APIResponse<User, AppError> = { data: user, status: 200 };
+```
+
+**Const Type Parameters (TypeScript 5.0+):**
+
+```typescript
+// Without const: T is inferred as string[]
+function routes<T extends readonly string[]>(paths: T): T {
+  return paths;
+}
+const r1 = routes(["home", "about"]); // Type: string[]
+
+// With const: T preserves literal types
+function routesConst<const T extends readonly string[]>(paths: T): T {
+  return paths;
+}
+const r2 = routesConst(["home", "about"]); // Type: readonly ["home", "about"]
+
+// Useful for creating type-safe mappings
+function createEnum<const T extends Record<string, string>>(obj: T): T {
+  return Object.freeze(obj);
+}
+
+const Status = createEnum({
+  Active: "ACTIVE",
+  Inactive: "INACTIVE",
+  Pending: "PENDING",
+});
+// Type: { readonly Active: "ACTIVE"; readonly Inactive: "INACTIVE"; readonly Pending: "PENDING" }
+```
+
 ### 2. Conditional Types
 
 **Purpose:** Create types that depend on conditions, enabling sophisticated type logic.
@@ -81,7 +126,9 @@ type B = IsString<number>; // false
 **Extracting Return Types:**
 
 ```typescript
-type ReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
+// Note: ReturnType<T> is already built-in in TypeScript.
+// This is shown for educational purposes to understand how it works internally.
+type MyReturnType<T> = T extends (...args: any[]) => infer R ? R : never;
 
 function getUser() {
   return { id: 1, name: "John" };
@@ -97,7 +144,13 @@ type User = ReturnType<typeof getUser>;
 type ToArray<T> = T extends any ? T[] : never;
 
 type StrOrNumArray = ToArray<string | number>;
-// Type: string[] | number[]
+// Type: string[] | number[] (distributes over the union)
+
+// Prevent distribution with tuple wrapping:
+type ToArrayNonDist<T> = [T] extends [any] ? T[] : never;
+
+type StrOrNumArrayNonDist = ToArrayNonDist<string | number>;
+// Type: (string | number)[] (does NOT distribute)
 ```
 
 **Nested Conditions:**
@@ -126,7 +179,9 @@ type T2 = TypeName<() => void>; // "function"
 **Basic Mapped Type:**
 
 ```typescript
-type Readonly<T> = {
+// Note: Readonly<T> is already built-in in TypeScript.
+// This demonstrates how mapped types work internally.
+type MyReadonly<T> = {
   readonly [P in keyof T]: T[P];
 };
 
@@ -142,7 +197,8 @@ type ReadonlyUser = Readonly<User>;
 **Optional Properties:**
 
 ```typescript
-type Partial<T> = {
+// Note: Partial<T> is already built-in in TypeScript.
+type MyPartial<T> = {
   [P in keyof T]?: T[P];
 };
 
@@ -150,7 +206,7 @@ type PartialUser = Partial<User>;
 // Type: { id?: number; name?: string; }
 ```
 
-**Key Remapping:**
+**Key Remapping (TypeScript 4.1+):**
 
 ```typescript
 type Getters<T> = {
@@ -196,7 +252,7 @@ type EventHandler = `on${Capitalize<EventName>}`;
 // Type: "onClick" | "onFocus" | "onBlur"
 ```
 
-**String Manipulation:**
+**String Manipulation Types:**
 
 ```typescript
 type UppercaseGreeting = Uppercase<"hello">; // "HELLO"
@@ -205,12 +261,14 @@ type CapitalizedName = Capitalize<"john">; // "John"
 type UncapitalizedName = Uncapitalize<"John">; // "john"
 ```
 
-**Path Building:**
+**Recursive Path Building:**
 
 ```typescript
 type Path<T> = T extends object
   ? {
-      [K in keyof T]: K extends string ? `${K}` | `${K}.${Path<T[K]>}` : never;
+      [K in keyof T]: K extends string
+        ? `${K}` | `${K}.${Path<T[K]>}`
+        : never;
     }[keyof T]
   : never;
 
@@ -226,6 +284,21 @@ interface Config {
 
 type ConfigPath = Path<Config>;
 // Type: "server" | "database" | "server.host" | "server.port" | "database.url"
+```
+
+**Parsing Template Literals:**
+
+```typescript
+// Extract route parameters from URL patterns
+type ExtractParams<T extends string> =
+  T extends `${string}:${infer Param}/${infer Rest}`
+    ? Param | ExtractParams<Rest>
+    : T extends `${string}:${infer Param}`
+      ? Param
+      : never;
+
+type Params = ExtractParams<"/users/:userId/posts/:postId">;
+// Type: "userId" | "postId"
 ```
 
 ### 5. Utility Types
@@ -259,6 +332,57 @@ type T3 = NonNullable<string | null | undefined>; // string
 
 // Record<K, T> - Create object type with keys K and values T
 type PageInfo = Record<"home" | "about", { title: string }>;
+
+// Awaited<T> (TypeScript 4.5+) - Recursively unwrap Promise types
+type ResolvedValue = Awaited<Promise<Promise<string>>>; // string
+
+// NoInfer<T> (TypeScript 5.4+) - Prevent inference from a specific position
+function createFSM<TState extends string>(config: {
+  initial: NoInfer<TState>;
+  states: TState[];
+}) {
+  return config;
+}
+// Without NoInfer, `initial` could widen the TState union.
+// With NoInfer, `initial` must be one of the values in `states`.
+createFSM({ initial: "idle", states: ["idle", "running", "stopped"] }); // OK
+// createFSM({ initial: "unknown", states: ["idle", "running"] }); // Error!
+```
+
+### 6. The `satisfies` Operator (TypeScript 4.9+)
+
+**Purpose:** Validate that an expression matches a type without widening the inferred type.
+
+```typescript
+type Color = "red" | "green" | "blue";
+type ColorMap = Record<Color, string | [number, number, number]>;
+
+// With type annotation: loses specific info
+const colorsAnnotated: ColorMap = {
+  red: [255, 0, 0],
+  green: "#00ff00",
+  blue: [0, 0, 255],
+};
+colorsAnnotated.green.toUpperCase(); // Error: string | [number, number, number] has no toUpperCase
+
+// With satisfies: validates AND preserves narrow types
+const colors = {
+  red: [255, 0, 0],
+  green: "#00ff00",
+  blue: [0, 0, 255],
+} satisfies ColorMap;
+
+colors.green.toUpperCase(); // OK! TypeScript knows green is string
+colors.red[0]; // OK! TypeScript knows red is [number, number, number]
+
+// Combined with as const for maximum precision
+const routes = {
+  home: "/",
+  about: "/about",
+  user: "/user/:id",
+} as const satisfies Record<string, `/${string}`>;
+
+// routes.home is typed as "/" (not string)
 ```
 
 ## Advanced Patterns
@@ -268,7 +392,7 @@ type PageInfo = Record<"home" | "about", { title: string }>;
 ```typescript
 type EventMap = {
   "user:created": { id: string; name: string };
-  "user:updated": { id: string };
+  "user:updated": { id: string; changes: Record<string, unknown> };
   "user:deleted": { id: string };
 };
 
@@ -277,11 +401,15 @@ class TypedEventEmitter<T extends Record<string, any>> {
     [K in keyof T]?: Array<(data: T[K]) => void>;
   } = {};
 
-  on<K extends keyof T>(event: K, callback: (data: T[K]) => void): void {
+  on<K extends keyof T>(event: K, callback: (data: T[K]) => void): () => void {
     if (!this.listeners[event]) {
       this.listeners[event] = [];
     }
     this.listeners[event]!.push(callback);
+    // Return unsubscribe function
+    return () => {
+      this.listeners[event] = this.listeners[event]?.filter((cb) => cb !== callback);
+    };
   }
 
   emit<K extends keyof T>(event: K, data: T[K]): void {
@@ -290,22 +418,33 @@ class TypedEventEmitter<T extends Record<string, any>> {
       callbacks.forEach((callback) => callback(data));
     }
   }
+
+  off<K extends keyof T>(event: K): void {
+    delete this.listeners[event];
+  }
 }
 
 const emitter = new TypedEventEmitter<EventMap>();
 
-emitter.on("user:created", (data) => {
-  console.log(data.id, data.name); // Type-safe!
+const unsubscribe = emitter.on("user:created", (data) => {
+  console.log(data.id, data.name); // Fully type-safe!
 });
 
 emitter.emit("user:created", { id: "1", name: "John" });
 // emitter.emit("user:created", { id: "1" });  // Error: missing 'name'
+unsubscribe(); // Clean up
 ```
 
 ### Pattern 2: Type-Safe API Client
 
 ```typescript
 type HTTPMethod = "GET" | "POST" | "PUT" | "DELETE";
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
 
 type EndpointConfig = {
   "/users": {
@@ -323,8 +462,11 @@ type ExtractParams<T> = T extends { params: infer P } ? P : never;
 type ExtractBody<T> = T extends { body: infer B } ? B : never;
 type ExtractResponse<T> = T extends { response: infer R } ? R : never;
 
-class APIClient<Config extends Record<string, Record<HTTPMethod, any>>> {
-  async request<Path extends keyof Config, Method extends keyof Config[Path]>(
+class APIClient<Config extends Record<string, Partial<Record<HTTPMethod, any>>>> {
+  async request<
+    Path extends keyof Config & string,
+    Method extends keyof Config[Path] & string,
+  >(
     path: Path,
     method: Method,
     ...[options]: ExtractParams<Config[Path][Method]> extends never
@@ -338,7 +480,7 @@ class APIClient<Config extends Record<string, Record<HTTPMethod, any>>> {
           },
         ]
   ): Promise<ExtractResponse<Config[Path][Method]>> {
-    // Implementation here
+    // Implementation: build URL, replace params, fetch, etc.
     return {} as any;
   }
 }
@@ -363,61 +505,76 @@ const user = await api.request("/users/:id", "GET", {
 ### Pattern 3: Builder Pattern with Type Safety
 
 ```typescript
-type BuilderState<T> = {
-  [K in keyof T]: T[K] | undefined;
-};
-
 type RequiredKeys<T> = {
   [K in keyof T]-?: {} extends Pick<T, K> ? never : K;
 }[keyof T];
 
-type OptionalKeys<T> = {
-  [K in keyof T]-?: {} extends Pick<T, K> ? K : never;
-}[keyof T];
+// Track which required keys have been set
+type HasAllRequired<T, Set extends keyof T> = RequiredKeys<T> extends Set
+  ? true
+  : false;
 
-type IsComplete<T, S> = RequiredKeys<T> extends keyof S ? (S[RequiredKeys<T>] extends undefined ? false : true) : false;
+class Builder<T extends Record<string, any>, Set extends keyof T = never> {
+  private state: Partial<T> = {};
 
-class Builder<T, S extends BuilderState<T> = {}> {
-  private state: S = {} as S;
-
-  set<K extends keyof T>(key: K, value: T[K]): Builder<T, S & Record<K, T[K]>> {
-    this.state[key] = value;
+  set<K extends keyof T>(
+    key: K,
+    value: T[K],
+  ): Builder<T, Set | K> {
+    (this.state as any)[key] = value;
     return this as any;
   }
 
-  build(this: IsComplete<T, S> extends true ? this : never): T {
+  // build() is only callable when all required keys have been set
+  build(
+    this: HasAllRequired<T, Set> extends true ? Builder<T, Set> : never,
+  ): T {
     return this.state as T;
   }
 }
 
-interface User {
+interface UserConfig {
   id: string;
   name: string;
   email: string;
   age?: number;
+  bio?: string;
 }
 
-const builder = new Builder<User>();
+const user = new Builder<UserConfig>()
+  .set("id", "1")
+  .set("name", "John")
+  .set("email", "john@example.com")
+  .set("age", 30) // optional, but type-safe
+  .build(); // OK: all required fields set
 
-const user = builder.set("id", "1").set("name", "John").set("email", "john@example.com").build(); // OK: all required fields set
-
-// const incomplete = builder
+// const incomplete = new Builder<UserConfig>()
 //   .set("id", "1")
-//   .build();  // Error: missing required fields
+//   .build(); // Error: 'name' and 'email' are missing
 ```
 
-### Pattern 4: Deep Readonly/Partial
+### Pattern 4: Deep Readonly / Deep Partial
 
 ```typescript
-type DeepReadonly<T> = {
-  readonly [P in keyof T]: T[P] extends object ? (T[P] extends Function ? T[P] : DeepReadonly<T[P]>) : T[P];
-};
+type DeepReadonly<T> = T extends Function
+  ? T
+  : T extends Map<infer K, infer V>
+    ? ReadonlyMap<DeepReadonly<K>, DeepReadonly<V>>
+    : T extends Set<infer U>
+      ? ReadonlySet<DeepReadonly<U>>
+      : T extends object
+        ? { readonly [P in keyof T]: DeepReadonly<T[P]> }
+        : T;
 
-type DeepPartial<T> = {
-  [P in keyof T]?: T[P] extends object ? (T[P] extends Array<infer U> ? Array<DeepPartial<U>> : DeepPartial<T[P]>) : T[P];
-};
+type DeepPartial<T> = T extends Function
+  ? T
+  : T extends Array<infer U>
+    ? Array<DeepPartial<U>>
+    : T extends object
+      ? { [P in keyof T]?: DeepPartial<T[P]> }
+      : T;
 
-interface Config {
+interface AppConfig {
   server: {
     host: string;
     port: number;
@@ -435,11 +592,11 @@ interface Config {
   };
 }
 
-type ReadonlyConfig = DeepReadonly<Config>;
-// All nested properties are readonly
+type ReadonlyConfig = DeepReadonly<AppConfig>;
+// All nested properties are readonly — prevents accidental mutation
 
-type PartialConfig = DeepPartial<Config>;
-// All nested properties are optional
+type PartialConfig = DeepPartial<AppConfig>;
+// All nested properties are optional — useful for config overrides
 ```
 
 ### Pattern 5: Type-Safe Form Validation
@@ -497,12 +654,12 @@ interface LoginForm {
 const validator = new FormValidator<LoginForm>({
   email: [
     {
-      validate: (v) => v.includes("@"),
-      message: "Email must contain @",
-    },
-    {
       validate: (v) => v.length > 0,
       message: "Email is required",
+    },
+    {
+      validate: (v) => v.includes("@"),
+      message: "Email must contain @",
     },
   ],
   password: [
@@ -520,32 +677,33 @@ const errors = validator.validate({
 // Type: { email?: string[]; password?: string[]; } | null
 ```
 
-### Pattern 6: Discriminated Unions
+### Pattern 6: Discriminated Unions and State Machines
 
 ```typescript
-type Success<T> = {
+// Use distinct names to avoid shadowing the global Error type
+type SuccessState<T> = {
   status: "success";
   data: T;
 };
 
-type Error = {
+type ErrorState = {
   status: "error";
   error: string;
 };
 
-type Loading = {
+type LoadingState = {
   status: "loading";
 };
 
-type AsyncState<T> = Success<T> | Error | Loading;
+type AsyncState<T> = SuccessState<T> | ErrorState | LoadingState;
 
 function handleState<T>(state: AsyncState<T>): void {
   switch (state.status) {
     case "success":
-      console.log(state.data); // Type: T
+      console.log(state.data); // Type: T — narrowed automatically
       break;
     case "error":
-      console.log(state.error); // Type: string
+      console.log(state.error); // Type: string — narrowed automatically
       break;
     case "loading":
       console.log("Loading...");
@@ -553,33 +711,74 @@ function handleState<T>(state: AsyncState<T>): void {
   }
 }
 
-// Type-safe state machine
-type State = { type: "idle" } | { type: "fetching"; requestId: string } | { type: "success"; data: any } | { type: "error"; error: Error };
+// Exhaustive check helper — causes a compile error if a case is missed
+function assertNever(value: never): never {
+  throw new Error(`Unexpected value: ${value}`);
+}
 
-type Event = { type: "FETCH"; requestId: string } | { type: "SUCCESS"; data: any } | { type: "ERROR"; error: Error } | { type: "RESET" };
+// Type-safe state machine with exhaustive transitions
+type MachineState =
+  | { type: "idle" }
+  | { type: "fetching"; requestId: string }
+  | { type: "success"; data: unknown }
+  | { type: "error"; message: string };
 
-function reducer(state: State, event: Event): State {
+type MachineEvent =
+  | { type: "FETCH"; requestId: string }
+  | { type: "SUCCESS"; data: unknown }
+  | { type: "ERROR"; message: string }
+  | { type: "RESET" };
+
+function reducer(state: MachineState, event: MachineEvent): MachineState {
   switch (state.type) {
     case "idle":
-      return event.type === "FETCH" ? { type: "fetching", requestId: event.requestId } : state;
+      return event.type === "FETCH"
+        ? { type: "fetching", requestId: event.requestId }
+        : state;
     case "fetching":
-      if (event.type === "SUCCESS") {
-        return { type: "success", data: event.data };
-      }
-      if (event.type === "ERROR") {
-        return { type: "error", error: event.error };
-      }
+      if (event.type === "SUCCESS") return { type: "success", data: event.data };
+      if (event.type === "ERROR") return { type: "error", message: event.message };
       return state;
     case "success":
     case "error":
       return event.type === "RESET" ? { type: "idle" } : state;
+    default:
+      return assertNever(state);
   }
 }
 ```
 
+### Pattern 7: Variadic Tuple Types (TypeScript 4.0+)
+
+```typescript
+// Concatenate two tuple types
+type Concat<A extends unknown[], B extends unknown[]> = [...A, ...B];
+
+type AB = Concat<[string, number], [boolean]>;
+// Type: [string, number, boolean]
+
+// Type-safe curry function
+type Head<T extends any[]> = T extends [infer H, ...any[]] ? H : never;
+type Tail<T extends any[]> = T extends [any, ...infer R] ? R : never;
+
+// Typed pipeline
+function pipe<A, B>(fn1: (a: A) => B): (a: A) => B;
+function pipe<A, B, C>(fn1: (a: A) => B, fn2: (b: B) => C): (a: A) => C;
+function pipe<A, B, C, D>(fn1: (a: A) => B, fn2: (b: B) => C, fn3: (c: C) => D): (a: A) => D;
+function pipe(...fns: Function[]) {
+  return (arg: any) => fns.reduce((prev, fn) => fn(prev), arg);
+}
+
+const transform = pipe(
+  (x: string) => x.length,    // string → number
+  (x: number) => x > 5,       // number → boolean
+);
+// Type: (a: string) => boolean
+```
+
 ## Type Inference Techniques
 
-### 1. Infer Keyword
+### 1. The `infer` Keyword
 
 ```typescript
 // Extract array element type
@@ -588,26 +787,65 @@ type ElementType<T> = T extends (infer U)[] ? U : never;
 type NumArray = number[];
 type Num = ElementType<NumArray>; // number
 
-// Extract promise type
-type PromiseType<T> = T extends Promise<infer U> ? U : never;
+// Extract promise type (recursively)
+type PromiseType<T> = T extends Promise<infer U> ? PromiseType<U> : T;
 
-type AsyncNum = PromiseType<Promise<number>>; // number
+type AsyncNum = PromiseType<Promise<Promise<number>>>; // number
 
 // Extract function parameters
-type Parameters<T> = T extends (...args: infer P) => any ? P : never;
+// Note: Parameters<T> is already built-in. Shown for educational purposes.
+type MyParameters<T> = T extends (...args: infer P) => any ? P : never;
 
 function foo(a: string, b: number) {}
 type FooParams = Parameters<typeof foo>; // [string, number]
 ```
 
-### 2. Type Guards
+### 2. Infer in Multiple Positions
+
+```typescript
+// Extract first and last elements of a tuple
+type FirstAndLast<T extends any[]> = T extends [infer F, ...any[], infer L]
+  ? [F, L]
+  : never;
+
+type FL = FirstAndLast<[1, 2, 3, 4]>; // [1, 4]
+
+// Infer in covariant position: union of candidates
+type CovariantInfer<T> = T extends { a: infer U; b: infer U } ? U : never;
+type Covariant = CovariantInfer<{ a: string; b: number }>; // string | number
+
+// Infer in contravariant position: intersection of candidates
+type ContravariantInfer<T> = T extends {
+  a: (x: infer U) => void;
+  b: (x: infer U) => void;
+} ? U : never;
+type Contravariant = ContravariantInfer<{
+  a: (x: string) => void;
+  b: (x: number) => void;
+}>; // string & number (i.e., never)
+
+// Practical use: extract union from overloaded function
+type OverloadReturnTypes<T> = T extends {
+  (...args: any[]): infer R1;
+  (...args: any[]): infer R2;
+} ? R1 | R2 : never;
+```
+
+### 3. Type Guards
 
 ```typescript
 function isString(value: unknown): value is string {
   return typeof value === "string";
 }
 
-function isArrayOf<T>(value: unknown, guard: (item: unknown) => item is T): value is T[] {
+function isNumber(value: unknown): value is number {
+  return typeof value === "number";
+}
+
+function isArrayOf<T>(
+  value: unknown,
+  guard: (item: unknown) => item is T,
+): value is T[] {
   return Array.isArray(value) && value.every(guard);
 }
 
@@ -616,75 +854,110 @@ const data: unknown = ["a", "b", "c"];
 if (isArrayOf(data, isString)) {
   data.forEach((s) => s.toUpperCase()); // Type: string[]
 }
+
+// Discriminated union type guard
+function isErrorState(state: AsyncState<unknown>): state is ErrorState {
+  return state.status === "error";
+}
 ```
 
-### 3. Assertion Functions
+### 4. Assertion Functions
 
 ```typescript
 function assertIsString(value: unknown): asserts value is string {
   if (typeof value !== "string") {
-    throw new Error("Not a string");
+    throw new Error(`Expected string, got ${typeof value}`);
+  }
+}
+
+function assertDefined<T>(value: T | null | undefined): asserts value is T {
+  if (value === null || value === undefined) {
+    throw new Error("Value is null or undefined");
   }
 }
 
 function processValue(value: unknown) {
   assertIsString(value);
-  // value is now typed as string
+  // value is now typed as string — no cast needed
   console.log(value.toUpperCase());
 }
 ```
 
 ## Best Practices
 
-1. **Use `unknown` over `any`**: Enforce type checking
-2. **Prefer `interface` for object shapes**: Better error messages
-3. **Use `type` for unions and complex types**: More flexible
-4. **Leverage type inference**: Let TypeScript infer when possible
-5. **Create helper types**: Build reusable type utilities
-6. **Use const assertions**: Preserve literal types
-7. **Avoid type assertions**: Use type guards instead
-8. **Document complex types**: Add JSDoc comments
-9. **Use strict mode**: Enable all strict compiler options
-10. **Test your types**: Use type tests to verify type behavior
+1. **Use `unknown` over `any`** — Enforce type checking at the call site; `any` defeats TypeScript's purpose
+2. **Prefer `interface` for object shapes** — Better error messages and supports declaration merging
+3. **Use `type` for unions, intersections, and complex types** — More flexible composition
+4. **Leverage type inference** — Let TypeScript infer when possible; annotate only when inference is insufficient
+5. **Use `satisfies` for validation without widening** — Get both type checking and narrow inference
+6. **Use `const` type parameters** — Preserve literal types in generic functions (TS 5.0+)
+7. **Create helper types** — Build reusable type utilities for common patterns
+8. **Use const assertions (`as const`)** — Preserve literal types and make objects deeply readonly
+9. **Avoid type assertions (`as`)** — Use type guards and assertion functions instead
+10. **Document complex types** — Add JSDoc comments explaining the purpose and constraints
+11. **Use strict mode** — Enable all strict compiler options (`strict: true` in tsconfig)
+12. **Test your types** — Use type-level tests to verify behavior (see Type Testing below)
+13. **Prefer discriminated unions** — Enables exhaustive type narrowing in switch/if blocks
+14. **Use `NoInfer<T>`** — Prevent unwanted type widening in generic functions (TS 5.4+)
 
 ## Type Testing
 
 ```typescript
-// Type assertion tests
-type AssertEqual<T, U> = [T] extends [U] ? ([U] extends [T] ? true : false) : false;
+// Strict type equality test
+type Expect<T extends true> = T;
+type Equal<X, Y> =
+  (<T>() => T extends X ? 1 : 2) extends (<T>() => T extends Y ? 1 : 2)
+    ? true
+    : false;
 
-type Test1 = AssertEqual<string, string>; // true
-type Test2 = AssertEqual<string, number>; // false
-type Test3 = AssertEqual<string | number, string>; // false
+// Usage: compile-time type tests (errors if the type is wrong)
+type _Test1 = Expect<Equal<string, string>>; // OK
+type _Test2 = Expect<Equal<number, number>>; // OK
+// type _Test3 = Expect<Equal<string, number>>; // Error! Types are not equal
 
-// Expect error helper
-type ExpectError<T extends never> = T;
+// Test with utility types
+type _TestPartial = Expect<
+  Equal<Partial<{ a: string; b: number }>, { a?: string; b?: number }>
+>;
 
-// Example usage
-type ShouldError = ExpectError<AssertEqual<string, number>>;
+// Test conditional types
+type _TestIsString1 = Expect<Equal<IsString<string>, true>>;
+type _TestIsString2 = Expect<Equal<IsString<number>, false>>;
+
+// Expect a type to be assignable to another
+type IsAssignableTo<T, U> = T extends U ? true : false;
+type _TestAssignable = Expect<IsAssignableTo<"hello", string>>; // OK
 ```
 
 ## Common Pitfalls
 
-1. **Over-using `any`**: Defeats the purpose of TypeScript
-2. **Ignoring strict null checks**: Can lead to runtime errors
-3. **Too complex types**: Can slow down compilation
-4. **Not using discriminated unions**: Misses type narrowing opportunities
-5. **Forgetting readonly modifiers**: Allows unintended mutations
-6. **Circular type references**: Can cause compiler errors
-7. **Not handling edge cases**: Like empty arrays or null values
+1. **Over-using `any`** — Defeats the purpose of TypeScript; use `unknown` and narrow
+2. **Ignoring strict null checks** — Can lead to `undefined is not an object` at runtime
+3. **Over-engineering types** — Complex types slow down IDE performance and confuse consumers
+4. **Shadowing built-in types** — Avoid naming custom types `Error`, `Object`, `Function`, etc.
+5. **Not using discriminated unions** — Misses type narrowing opportunities; use a `type` or `status` discriminant
+6. **Forgetting `readonly`** — Allows unintended mutations; use `Readonly<T>`, `as const`, or `DeepReadonly<T>`
+7. **Circular type references** — Can cause infinite recursion; add a recursion bound or depth limit
+8. **Not handling edge cases** — Empty arrays, `null`, `undefined`, empty strings — guard for all of them
+9. **Ignoring distributive behavior** — Conditional types distribute over unions by default; wrap in `[T]` to prevent
+10. **Using `as` to silence errors** — Masks bugs; prefer refactoring the types to be correct
 
 ## Performance Considerations
 
-- Avoid deeply nested conditional types
-- Use simple types when possible
-- Cache complex type computations
-- Limit recursion depth in recursive types
-- Use build tools to skip type checking in production
+- **Limit conditional type depth** — TypeScript has a recursion limit of ~50 levels; keep recursive types under 20 levels for good IDE performance
+- **Use tail-recursive types (TS 4.5+)** — Accumulator-pattern recursive types get optimized by the compiler
+- **Avoid excessive mapped type combinations** — Each mapped type creates a new type; chaining many mapped types can slow compilation
+- **Simplify union types** — Unions over ~25 members start impacting performance; consider grouping with branded types
+- **Cache complex computations** — Extract intermediate types into named aliases so they're computed once
+- **Use `interface extends` over intersection `&`** — Interfaces are cached by name; intersections are recomputed
+- **Profile with `--generateTrace`** — Run `tsc --generateTrace traceDir` to identify slow types in your project
+- **Skip type checking in CI builds** — Use `tsc --noEmit` for type checking separately, `esbuild`/`swc` for bundling
 
 ## Resources
 
 - **TypeScript Handbook**: https://www.typescriptlang.org/docs/handbook/
 - **Type Challenges**: https://github.com/type-challenges/type-challenges
 - **TypeScript Deep Dive**: https://basarat.gitbook.io/typescript/
-- **Effective TypeScript**: Book by Dan Vanderkam
+- **Effective TypeScript** (2nd ed.): Book by Dan Vanderkam
+- **Total TypeScript**: https://www.totaltypescript.com/
+- **TypeScript Release Notes**: https://devblogs.microsoft.com/typescript/
